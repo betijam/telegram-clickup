@@ -20,6 +20,7 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
 OPENAI_TASK_MODEL = os.environ.get("OPENAI_TASK_MODEL", "gpt-4o-mini")
+TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
 
 CLICKUP_BASE = "https://api.clickup.com/api/v2"
 OPENAI_TRANSCRIPT_URL = "https://api.openai.com/v1/audio/transcriptions"
@@ -92,6 +93,10 @@ def get_telegram_file_base() -> str | None:
     return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}"
 
 
+def get_bot_username() -> str:
+    return TELEGRAM_BOT_USERNAME
+
+
 def get_missing_required_env() -> list[str]:
     missing = []
     if not TELEGRAM_TOKEN:
@@ -118,6 +123,75 @@ def priority_response_text(priority: int) -> str:
         4: "Pieliku ar zemu prioritāti.",
     }
     return mapping.get(priority, "Pieliku ClickUp.")
+
+
+def is_service_message(message: dict) -> bool:
+    service_keys = (
+        "new_chat_members",
+        "left_chat_member",
+        "new_chat_title",
+        "new_chat_photo",
+        "delete_chat_photo",
+        "group_chat_created",
+        "supergroup_chat_created",
+        "channel_chat_created",
+        "message_auto_delete_timer_changed",
+        "pinned_message",
+    )
+    return any(key in message for key in service_keys)
+
+
+def is_group_chat(message: dict) -> bool:
+    chat_type = message.get("chat", {}).get("type", "")
+    return chat_type in {"group", "supergroup"}
+
+
+def message_mentions_bot(message: dict) -> bool:
+    username = get_bot_username().lower()
+    if not username:
+        return False
+
+    text = (message.get("text") or message.get("caption") or "")
+    entities = message.get("entities") or message.get("caption_entities") or []
+    for entity in entities:
+        if entity.get("type") != "mention":
+            continue
+        offset = entity.get("offset", 0)
+        length = entity.get("length", 0)
+        mention_text = text[offset:offset + length].lstrip("@").lower()
+        if mention_text == username:
+            return True
+
+    return f"@{username}" in text.lower()
+
+
+def message_is_reply_to_bot(message: dict) -> bool:
+    username = get_bot_username().lower()
+    reply = message.get("reply_to_message") or {}
+    from_user = reply.get("from") or {}
+    reply_username = (from_user.get("username") or "").lower()
+    return bool(username and reply_username == username)
+
+
+def strip_bot_mention(text: str) -> str:
+    username = get_bot_username()
+    if not username:
+        return text
+
+    pattern = re.compile(rf"@{re.escape(username)}\b", re.IGNORECASE)
+    cleaned = pattern.sub("", text or "").strip(" ,:-")
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def should_process_group_message(message: dict) -> bool:
+    text = (message.get("text") or "").strip()
+    if text.startswith("/task"):
+        return True
+    if message_mentions_bot(message):
+        return True
+    if message_is_reply_to_bot(message):
+        return True
+    return False
 
 
 def telegram_api(method: str, payload: dict | None = None) -> dict | None:
@@ -452,6 +526,8 @@ def transcribe_audio(audio_bytes: bytes, filename: str, mime_type: str) -> str |
 
 def extract_message_text(message: dict) -> tuple[str | None, str | None]:
     text = (message.get("text") or "").strip()
+    if is_group_chat(message) and text:
+        text = strip_bot_mention(text)
     if text:
         return text, None
 
@@ -537,11 +613,17 @@ def handle_update(update: dict) -> None:
         return
 
     message = update.get("message", {})
+    if not message or is_service_message(message):
+        return
+
     chat_id = message.get("chat", {}).get("id")
     if not chat_id:
         return
 
     text = (message.get("text") or "").strip()
+    if is_group_chat(message) and not should_process_group_message(message):
+        return
+
     if text in {"/start", "/help"}:
         send_telegram(chat_id, help_text())
         return
