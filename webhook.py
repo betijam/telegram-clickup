@@ -15,6 +15,7 @@ import requests
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CLICKUP_API_KEY = os.environ.get("CLICKUP_API_KEY", "")
 CLICKUP_LIST_ID = os.environ.get("CLICKUP_LIST_ID", "")
+CLICKUP_ASSIGNEE_ID = os.environ.get("CLICKUP_ASSIGNEE_ID", "").strip()
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
@@ -192,6 +193,9 @@ def create_clickup_task(name: str, description: str, priority: int = 3) -> dict 
         "description": description,
         "priority": priority,
     }
+    if CLICKUP_ASSIGNEE_ID.isdigit():
+        payload["assignees"] = [int(CLICKUP_ASSIGNEE_ID)]
+
     try:
         resp = requests.post(
             f"{CLICKUP_BASE}/list/{CLICKUP_LIST_ID}/task",

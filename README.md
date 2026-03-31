@@ -17,6 +17,7 @@ Vercel projektam pievieno:
 | `TELEGRAM_TOKEN` | ja | Telegram bota token |
 | `CLICKUP_API_KEY` | ja | ClickUp API piekluve |
 | `CLICKUP_LIST_ID` | ja | Vienas ClickUp listes ID |
+| `CLICKUP_ASSIGNEE_ID` | ne | ClickUp user ID, kam visus taskus assignot |
 | `WEBHOOK_SECRET` | ne | Papildu Telegram webhook aizsardziba |
 | `OPENAI_API_KEY` | ne | Vajadzigs, ja gribi apstradat balss zinas |
 | `OPENAI_TRANSCRIBE_MODEL` | ne | Pec noklusejuma `gpt-4o-mini-transcribe` |
@@ -84,3 +85,14 @@ https://api.clickup.com/api/v2/list/{CLICKUP_LIST_ID}/task
 ```
 
 Tas nozime, ka pietiek pareizi atrast un ielikt savu `CLICKUP_LIST_ID`.
+
+## Automatisks assignee
+
+Ja gribi, lai visi jaunie uzdevumi automatiski tiek piekirsti vienam cilvekam,
+pieliec Vercel vide:
+
+```text
+CLICKUP_ASSIGNEE_ID=12345678
+```
+
+Svarigi: ClickUp API izmanto lietotaja ID, nevis e-pastu.
