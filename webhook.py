@@ -136,13 +136,13 @@ def send_telegram(chat_id: int, text: str) -> None:
 
 def help_text() -> str:
     return (
-        "Sveiks! Sis bots veido ClickUp uzdevumus viena noteikta liste.<br><br>"
-        "Vari rakstit dabiska valoda, piemeram:<br>"
-        "<code>Salabot login formu. Klienti netiek ieksa. Tas ir steidzami.</code><br><br>"
-        "Vari lietot ari strukturizetu formu:<br>"
-        "<code>/task Nosaukums | Apraksts | steidzami</code><br><br>"
+        "Sveiks! Sis bots veido ClickUp uzdevumus viena noteikta liste.\n\n"
+        "Vari rakstit dabiska valoda, piemeram:\n"
+        "<code>Salabot login formu. Klienti netiek ieksa. Tas ir steidzami.</code>\n\n"
+        "Vari lietot ari strukturizetu formu:\n"
+        "<code>/task Nosaukums | Apraksts | steidzami</code>\n\n"
         "Prioritates vardiem: <code>steidzami</code>, <code>augsta</code>, "
-        "<code>normala</code>, <code>zema</code>.<br><br>"
+        "<code>normala</code>, <code>zema</code>.\n\n"
         "Balss zinas ari var izmantot, ja Vercel vide ir ielikts <code>OPENAI_API_KEY</code>."
     )
 
@@ -391,7 +391,7 @@ def send_task_created(
         "",
         f'<a href="{escape_html(task_url)}">Atvert ClickUp</a>',
     ])
-    send_telegram(chat_id, "<br>".join(pieces))
+    send_telegram(chat_id, "\n".join(pieces))
 
 
 def handle_task_creation(chat_id: int, raw_text: str, transcript: str | None = None) -> None:
