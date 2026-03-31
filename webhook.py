@@ -20,6 +20,7 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
 OPENAI_TASK_MODEL = os.environ.get("OPENAI_TASK_MODEL", "gpt-4o-mini")
+OPENAI_TASK_REWRITE = os.environ.get("OPENAI_TASK_REWRITE", "").strip().lower() in {"1", "true", "yes", "on"}
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
 
 CLICKUP_BASE = "https://api.clickup.com/api/v2"
@@ -252,8 +253,9 @@ def help_text() -> str:
         "<code>/task Nosaukums | Apraksts | steidzami</code>\n\n"
         "Prioritāti var ierakstīt ar vārdiem <code>steidzami</code>, <code>augsta</code>, "
         "<code>normāla</code> vai <code>zema</code>.\n\n"
-        "Ja Vercel vidē ir ielikts <code>OPENAI_API_KEY</code>, es varu arī pārformulēt "
-        "skaidrāku nosaukumu un salikt piezīmes aprakstā. Tas attiecas arī uz balss ziņām."
+        "Ja Vercel vidē ir ielikts <code>OPENAI_API_KEY</code>, es varu apstrādāt balss ziņas. "
+        "Ja papildus ieslēgsi <code>OPENAI_TASK_REWRITE=true</code>, varu arī saudzīgi "
+        "sakārtot nosaukumu un piezīmes, nepieliekot klāt izdomātu saturu."
     )
 
 
@@ -334,8 +336,11 @@ def split_title_and_description(text: str) -> tuple[str, str]:
 
     lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
     if len(lines) >= 2:
-        title = cleanup_title(lines[0])
-        description = "\n".join(lines[1:]).strip()
+        non_priority_lines = [line for line in lines if not looks_like_priority_only(line)]
+        title_source = non_priority_lines[0] if non_priority_lines else lines[0]
+        description_lines = non_priority_lines[1:] if len(non_priority_lines) > 1 else []
+        title = cleanup_title(title_source)
+        description = "\n".join(description_lines).strip()
         if title:
             return title, description
 
@@ -390,7 +395,7 @@ def parse_task_text(text: str) -> tuple[str, str, int]:
 
 
 def maybe_rewrite_task_with_ai(raw_text: str) -> tuple[str, str, int] | None:
-    if not OPENAI_API_KEY:
+    if not OPENAI_API_KEY or not OPENAI_TASK_REWRITE:
         return None
 
     payload = {
@@ -401,9 +406,11 @@ def maybe_rewrite_task_with_ai(raw_text: str) -> tuple[str, str, int] | None:
                 "content": (
                     "Convert a Telegram message into a ClickUp task in JSON. "
                     "Keep the same language as the user. "
-                    "Rewrite the title to be clear and action-oriented, max 80 characters. "
-                    "Put extra notes, context, and details into description. "
-                    "Do not invent facts. "
+                    "Stay extremely close to the user's wording. "
+                    "Do not add motivation, context, interpretation, or extra phrasing. "
+                    "If the request is unclear, preserve the original wording as literally as possible. "
+                    "The title should be short and clear, but still based on the user's exact words. "
+                    "Put only the remaining original notes into description. "
                     "Priority rules: 1 urgent/steidzami, 2 high/augsta, 3 normal, 4 low/zema. "
                     "If unclear, use 3."
                 ),
