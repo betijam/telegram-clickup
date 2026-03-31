@@ -22,6 +22,7 @@ OPENAI_TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini
 OPENAI_TASK_MODEL = os.environ.get("OPENAI_TASK_MODEL", "gpt-4o-mini")
 OPENAI_TASK_REWRITE = os.environ.get("OPENAI_TASK_REWRITE", "").strip().lower() in {"1", "true", "yes", "on"}
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+BOT_INFO_CACHE: dict | None = None
 
 CLICKUP_BASE = "https://api.clickup.com/api/v2"
 OPENAI_TRANSCRIPT_URL = "https://api.openai.com/v1/audio/transcriptions"
@@ -94,8 +95,39 @@ def get_telegram_file_base() -> str | None:
     return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}"
 
 
+def get_bot_info() -> dict:
+    global BOT_INFO_CACHE
+
+    if BOT_INFO_CACHE is not None:
+        return BOT_INFO_CACHE
+
+    if TELEGRAM_BOT_USERNAME:
+        BOT_INFO_CACHE = {"username": TELEGRAM_BOT_USERNAME}
+        return BOT_INFO_CACHE
+
+    tg_base = get_telegram_base()
+    if not tg_base:
+        BOT_INFO_CACHE = {}
+        return BOT_INFO_CACHE
+
+    try:
+        resp = requests.get(f"{tg_base}/getMe", timeout=15)
+        if not resp.ok:
+            print(f"Telegram getMe error: {resp.status_code} {resp.text}")
+            BOT_INFO_CACHE = {}
+            return BOT_INFO_CACHE
+
+        data = resp.json()
+        BOT_INFO_CACHE = data.get("result") or {}
+        return BOT_INFO_CACHE
+    except Exception as exc:
+        print(f"Telegram getMe exception: {exc}")
+        BOT_INFO_CACHE = {}
+        return BOT_INFO_CACHE
+
+
 def get_bot_username() -> str:
-    return TELEGRAM_BOT_USERNAME
+    return (get_bot_info().get("username") or "").strip().lstrip("@")
 
 
 def get_missing_required_env() -> list[str]:

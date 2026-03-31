@@ -18,6 +18,7 @@ Vercel projektam pievieno:
 | `CLICKUP_API_KEY` | ja | ClickUp API piekluve |
 | `CLICKUP_LIST_ID` | ja | Vienas ClickUp listes ID |
 | `CLICKUP_ASSIGNEE_ID` | ne | ClickUp user ID, kam visus taskus assignot |
+| `TELEGRAM_BOT_USERNAME` | ne | Bota username grupu mentioniem, ja negribi paļauties uz auto-detekciju |
 | `WEBHOOK_SECRET` | ne | Papildu Telegram webhook aizsardziba |
 | `OPENAI_API_KEY` | ne | Vajadzigs, ja gribi apstradat balss zinas |
 | `OPENAI_TRANSCRIBE_MODEL` | ne | Pec noklusejuma `gpt-4o-mini-transcribe` |
