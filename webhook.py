@@ -107,15 +107,15 @@ def config_error_text() -> str:
     missing = get_missing_required_env()
     if not missing:
         return ""
-    return "Trukst Vercel vides mainigie: " + ", ".join(missing)
+    return "Trūkst Vercel vides mainīgie: " + ", ".join(missing)
 
 
 def priority_response_text(priority: int) -> str:
     mapping = {
-        1: "Pieliku ka steidzamu.",
-        2: "Pieliku ar augstu prioritati.",
+        1: "Pieliku kā steidzamu.",
+        2: "Pieliku ar augstu prioritāti.",
         3: "Pieliku ClickUp.",
-        4: "Pieliku ar zemu prioritati.",
+        4: "Pieliku ar zemu prioritāti.",
     }
     return mapping.get(priority, "Pieliku ClickUp.")
 
@@ -171,15 +171,15 @@ def send_telegram(chat_id: int, text: str) -> None:
 
 def help_text() -> str:
     return (
-        "Sveiks! Uzraksti man vienkarsi, kas ir jadara, un es to pieliksu ClickUp.\n\n"
-        "Piemers:\n"
-        "<code>Salabot login formu. Klienti netiek ieksa. Tas ir steidzami.</code>\n\n"
-        "Ja gribi, vari lietot ari strukturizetu formu:\n"
+        "Sveiks! Uzraksti man vienkārši, kas ir jādara, un es to pielikšu ClickUp.\n\n"
+        "Piemērs:\n"
+        "<code>Salabot login formu. Klienti netiek iekšā. Tas ir steidzami.</code>\n\n"
+        "Ja gribi, vari lietot arī strukturizētu formu:\n"
         "<code>/task Nosaukums | Apraksts | steidzami</code>\n\n"
-        "Prioritati var ierakstit ar vardiem <code>steidzami</code>, <code>augsta</code>, "
-        "<code>normala</code> vai <code>zema</code>.\n\n"
-        "Ja Vercel vide ir ielikts <code>OPENAI_API_KEY</code>, es varu ari parformulet "
-        "skaidraku nosaukumu un salikt piezimes apraksta. Tas attiecas ari uz balss zinam."
+        "Prioritāti var ierakstīt ar vārdiem <code>steidzami</code>, <code>augsta</code>, "
+        "<code>normāla</code> vai <code>zema</code>.\n\n"
+        "Ja Vercel vidē ir ielikts <code>OPENAI_API_KEY</code>, es varu arī pārformulēt "
+        "skaidrāku nosaukumu un salikt piezīmes aprakstā. Tas attiecas arī uz balss ziņām."
     )
 
 
@@ -379,6 +379,22 @@ def maybe_rewrite_task_with_ai(raw_text: str) -> tuple[str, str, int] | None:
     return title[:80].strip(), description, priority
 
 
+def normalize_audio_filename(filename: str, file_path: str, mime_type: str | None) -> tuple[str, str]:
+    normalized_name = filename or os.path.basename(file_path) or "audio.ogg"
+    normalized_type = mime_type or ""
+
+    if normalized_name.endswith(".oga"):
+        normalized_name = normalized_name[:-4] + ".ogg"
+
+    if file_path.endswith(".oga") and "." not in os.path.basename(normalized_name):
+        normalized_name = normalized_name + ".ogg"
+
+    if not normalized_type:
+        normalized_type = "audio/ogg" if normalized_name.endswith(".ogg") else "audio/mpeg"
+
+    return normalized_name, normalized_type
+
+
 def get_telegram_file(file_id: str) -> tuple[bytes, str, str] | None:
     tg_file_base = get_telegram_file_base()
     if not tg_file_base:
@@ -443,27 +459,27 @@ def extract_message_text(message: dict) -> tuple[str | None, str | None]:
     audio = message.get("audio")
     media = voice or audio
     if not media:
-        return None, "Atbalstitas ir teksta vai balss zinas."
+        return None, "Atbalstītas ir teksta vai balss ziņas."
 
     if not OPENAI_API_KEY:
         return None, (
-            "Balss zinu apstrade nav ieslegta. "
-            "Pievieno Vercel vide <code>OPENAI_API_KEY</code>."
+            "Balss ziņu apstrāde nav ieslēgta. "
+            "Pievieno Vercel vidē <code>OPENAI_API_KEY</code>."
         )
 
     file_id = media.get("file_id")
     if not file_id:
-        return None, "Neizdevas atrast balss failu."
+        return None, "Neizdevās atrast balss failu."
 
     audio_file = get_telegram_file(file_id)
     if not audio_file:
-        return None, "Neizdevas lejupieladet balss zinu no Telegram."
+        return None, "Neizdevās lejupielādēt balss ziņu no Telegram."
 
     audio_bytes, filename, file_path = audio_file
-    mime_type = media.get("mime_type") or ("audio/ogg" if file_path.endswith(".oga") else "audio/mpeg")
+    filename, mime_type = normalize_audio_filename(filename, file_path, media.get("mime_type"))
     transcript = transcribe_audio(audio_bytes, filename, mime_type)
     if not transcript:
-        return None, "Neizdevas parveidot balss zinu teksta."
+        return None, "Neizdevās pārveidot balss ziņu tekstā."
 
     caption = (message.get("caption") or "").strip()
     combined_text = transcript if not caption else f"{caption}\n{transcript}"
@@ -486,12 +502,12 @@ def send_task_created(
     if transcript:
         pieces.extend([
             "",
-            f"<i>Balss zinas teksts:</i> {escape_html(shorten_title(transcript, 140))}",
+            f"<i>Balss ziņas teksts:</i> {escape_html(shorten_title(transcript, 140))}",
         ])
 
     pieces.extend([
         "",
-        f'<a href="{escape_html(task_url)}">Atvert ClickUp</a>',
+        f'<a href="{escape_html(task_url)}">Atvērt ClickUp</a>',
     ])
     send_telegram(chat_id, "\n".join(pieces))
 
@@ -504,7 +520,7 @@ def handle_task_creation(chat_id: int, raw_text: str, transcript: str | None = N
         title, description, priority = parse_task_text(raw_text)
 
     if not title:
-        send_telegram(chat_id, "Nesapratu, ko tiesi pielikt ClickUp. Uzraksti to velreiz vienkarsak.")
+        send_telegram(chat_id, "Nesapratu, ko tieši pielikt ClickUp. Uzraksti to vēlreiz vienkāršāk.")
         return
 
     task = create_clickup_task(title, description, priority)
@@ -512,7 +528,7 @@ def handle_task_creation(chat_id: int, raw_text: str, transcript: str | None = N
         send_task_created(chat_id, title, priority, task["url"], transcript=transcript)
         return
 
-    send_telegram(chat_id, "Nepiekluvu ClickUp. Parbaudi, vai CLICKUP_API_KEY un CLICKUP_LIST_ID ir pareizi.")
+    send_telegram(chat_id, "Nepiekluvu ClickUp. Pārbaudi, vai CLICKUP_API_KEY un CLICKUP_LIST_ID ir pareizi.")
 
 
 def handle_update(update: dict) -> None:
