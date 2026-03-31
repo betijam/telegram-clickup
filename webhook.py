@@ -108,6 +108,16 @@ def config_error_text() -> str:
     return "Trukst Vercel vides mainigie: " + ", ".join(missing)
 
 
+def priority_response_text(priority: int) -> str:
+    mapping = {
+        1: "Pieliku ka steidzamu.",
+        2: "Pieliku ar augstu prioritati.",
+        3: "Pieliku ClickUp.",
+        4: "Pieliku ar zemu prioritati.",
+    }
+    return mapping.get(priority, "Pieliku ClickUp.")
+
+
 def telegram_api(method: str, payload: dict | None = None) -> dict | None:
     tg_base = get_telegram_base()
     if not tg_base:
@@ -136,13 +146,13 @@ def send_telegram(chat_id: int, text: str) -> None:
 
 def help_text() -> str:
     return (
-        "Sveiks! Sis bots veido ClickUp uzdevumus viena noteikta liste.\n\n"
-        "Vari rakstit dabiska valoda, piemeram:\n"
+        "Sveiks! Uzraksti man vienkarsi, kas ir jadara, un es to pieliksu ClickUp.\n\n"
+        "Piemers:\n"
         "<code>Salabot login formu. Klienti netiek ieksa. Tas ir steidzami.</code>\n\n"
-        "Vari lietot ari strukturizetu formu:\n"
+        "Ja gribi, vari lietot ari strukturizetu formu:\n"
         "<code>/task Nosaukums | Apraksts | steidzami</code>\n\n"
-        "Prioritates vardiem: <code>steidzami</code>, <code>augsta</code>, "
-        "<code>normala</code>, <code>zema</code>.\n\n"
+        "Prioritati var ierakstit ar vardiem <code>steidzami</code>, <code>augsta</code>, "
+        "<code>normala</code> vai <code>zema</code>.\n\n"
         "Balss zinas ari var izmantot, ja Vercel vide ir ielikts <code>OPENAI_API_KEY</code>."
     )
 
@@ -375,16 +385,15 @@ def send_task_created(
     transcript: str | None = None,
 ) -> None:
     pieces = [
-        "Uzdevums izveidots!",
+        priority_response_text(priority),
         "",
-        f"<b>{escape_html(name)}</b>",
-        f"Prioritate: {escape_html(PRIORITY_LABELS.get(priority, 'normala'))}",
+        f"Pieliktais uzdevums: <b>{escape_html(name)}</b>",
     ]
 
     if transcript:
         pieces.extend([
             "",
-            f"<i>Balss transkripts:</i> {escape_html(shorten_title(transcript, 140))}",
+            f"<i>Balss zinas teksts:</i> {escape_html(shorten_title(transcript, 140))}",
         ])
 
     pieces.extend([
@@ -397,7 +406,7 @@ def send_task_created(
 def handle_task_creation(chat_id: int, raw_text: str, transcript: str | None = None) -> None:
     title, description, priority = parse_task_text(raw_text)
     if not title:
-        send_telegram(chat_id, "Neizdevas saprast uzdevuma nosaukumu. Uzraksti to vienkarsak.")
+        send_telegram(chat_id, "Nesapratu, ko tiesi pielikt ClickUp. Uzraksti to velreiz vienkarsak.")
         return
 
     task = create_clickup_task(title, description, priority)
@@ -405,7 +414,7 @@ def handle_task_creation(chat_id: int, raw_text: str, transcript: str | None = N
         send_task_created(chat_id, title, priority, task["url"], transcript=transcript)
         return
 
-    send_telegram(chat_id, "Radas kluda. Parbaudi CLICKUP_API_KEY un CLICKUP_LIST_ID.")
+    send_telegram(chat_id, "Nepiekluvu ClickUp. Parbaudi, vai CLICKUP_API_KEY un CLICKUP_LIST_ID ir pareizi.")
 
 
 def handle_update(update: dict) -> None:
