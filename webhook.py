@@ -18,6 +18,7 @@ CLICKUP_LIST_ID = os.environ.get("CLICKUP_LIST_ID", "")
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
+OPENAI_TASK_MODEL = os.environ.get("OPENAI_TASK_MODEL", "gpt-4o-mini")
 
 CLICKUP_BASE = "https://api.clickup.com/api/v2"
 OPENAI_TRANSCRIPT_URL = "https://api.openai.com/v1/audio/transcriptions"
@@ -135,6 +136,29 @@ def telegram_api(method: str, payload: dict | None = None) -> dict | None:
         return None
 
 
+def openai_chat_completion(payload: dict) -> dict | None:
+    if not OPENAI_API_KEY:
+        return None
+
+    try:
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=45,
+        )
+        if not resp.ok:
+            print(f"OpenAI chat completion error: {resp.status_code} {resp.text}")
+            return None
+        return resp.json()
+    except Exception as exc:
+        print(f"OpenAI chat completion exception: {exc}")
+        return None
+
+
 def send_telegram(chat_id: int, text: str) -> None:
     telegram_api("sendMessage", {
         "chat_id": chat_id,
@@ -153,7 +177,8 @@ def help_text() -> str:
         "<code>/task Nosaukums | Apraksts | steidzami</code>\n\n"
         "Prioritati var ierakstit ar vardiem <code>steidzami</code>, <code>augsta</code>, "
         "<code>normala</code> vai <code>zema</code>.\n\n"
-        "Balss zinas ari var izmantot, ja Vercel vide ir ielikts <code>OPENAI_API_KEY</code>."
+        "Ja Vercel vide ir ielikts <code>OPENAI_API_KEY</code>, es varu ari parformulet "
+        "skaidraku nosaukumu un salikt piezimes apraksta. Tas attiecas ari uz balss zinam."
     )
 
 
@@ -286,6 +311,70 @@ def parse_task_text(text: str) -> tuple[str, str, int]:
     return title, description, priority
 
 
+def maybe_rewrite_task_with_ai(raw_text: str) -> tuple[str, str, int] | None:
+    if not OPENAI_API_KEY:
+        return None
+
+    payload = {
+        "model": OPENAI_TASK_MODEL,
+        "messages": [
+            {
+                "role": "developer",
+                "content": (
+                    "Convert a Telegram message into a ClickUp task in JSON. "
+                    "Keep the same language as the user. "
+                    "Rewrite the title to be clear and action-oriented, max 80 characters. "
+                    "Put extra notes, context, and details into description. "
+                    "Do not invent facts. "
+                    "Priority rules: 1 urgent/steidzami, 2 high/augsta, 3 normal, 4 low/zema. "
+                    "If unclear, use 3."
+                ),
+            },
+            {
+                "role": "user",
+                "content": raw_text,
+            },
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "clickup_task",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "description": {"type": "string"},
+                        "priority": {"type": "integer", "enum": [1, 2, 3, 4]},
+                    },
+                    "required": ["title", "description", "priority"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+    }
+
+    response = openai_chat_completion(payload)
+    if not response:
+        return None
+
+    try:
+        content = response["choices"][0]["message"]["content"]
+        data = json.loads(content)
+        title = (data.get("title") or "").strip()
+        description = (data.get("description") or "").strip()
+        priority = int(data.get("priority") or 3)
+    except Exception as exc:
+        print(f"OpenAI task rewrite parse error: {exc}")
+        return None
+
+    if not title:
+        return None
+
+    priority = max(1, min(4, priority))
+    return title[:80].strip(), description, priority
+
+
 def get_telegram_file(file_id: str) -> tuple[bytes, str, str] | None:
     tg_file_base = get_telegram_file_base()
     if not tg_file_base:
@@ -404,7 +493,12 @@ def send_task_created(
 
 
 def handle_task_creation(chat_id: int, raw_text: str, transcript: str | None = None) -> None:
-    title, description, priority = parse_task_text(raw_text)
+    rewritten_task = maybe_rewrite_task_with_ai(raw_text)
+    if rewritten_task:
+        title, description, priority = rewritten_task
+    else:
+        title, description, priority = parse_task_text(raw_text)
+
     if not title:
         send_telegram(chat_id, "Nesapratu, ko tiesi pielikt ClickUp. Uzraksti to velreiz vienkarsak.")
         return
