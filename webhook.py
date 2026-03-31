@@ -12,16 +12,14 @@ from http.server import BaseHTTPRequestHandler
 
 import requests
 
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-CLICKUP_API_KEY = os.environ["CLICKUP_API_KEY"]
-CLICKUP_LIST_ID = os.environ["CLICKUP_LIST_ID"]
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+CLICKUP_API_KEY = os.environ.get("CLICKUP_API_KEY", "")
+CLICKUP_LIST_ID = os.environ.get("CLICKUP_LIST_ID", "")
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
 
 CLICKUP_BASE = "https://api.clickup.com/api/v2"
-TG_BASE = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
-TG_FILE_BASE = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}"
 OPENAI_TRANSCRIPT_URL = "https://api.openai.com/v1/audio/transcriptions"
 
 PRIORITY_LABELS = {
@@ -80,9 +78,43 @@ def escape_html(value: str) -> str:
     return html.escape(value or "", quote=True)
 
 
+def get_telegram_base() -> str | None:
+    if not TELEGRAM_TOKEN:
+        return None
+    return f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+
+
+def get_telegram_file_base() -> str | None:
+    if not TELEGRAM_TOKEN:
+        return None
+    return f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}"
+
+
+def get_missing_required_env() -> list[str]:
+    missing = []
+    if not TELEGRAM_TOKEN:
+        missing.append("TELEGRAM_TOKEN")
+    if not CLICKUP_API_KEY:
+        missing.append("CLICKUP_API_KEY")
+    if not CLICKUP_LIST_ID:
+        missing.append("CLICKUP_LIST_ID")
+    return missing
+
+
+def config_error_text() -> str:
+    missing = get_missing_required_env()
+    if not missing:
+        return ""
+    return "Trukst Vercel vides mainigie: " + ", ".join(missing)
+
+
 def telegram_api(method: str, payload: dict | None = None) -> dict | None:
+    tg_base = get_telegram_base()
+    if not tg_base:
+        print("Telegram API skipped: TELEGRAM_TOKEN is missing")
+        return None
     try:
-        resp = requests.post(f"{TG_BASE}/{method}", json=payload or {}, timeout=15)
+        resp = requests.post(f"{tg_base}/{method}", json=payload or {}, timeout=15)
         if not resp.ok:
             print(f"Telegram API error {method}: {resp.status_code} {resp.text}")
             return None
@@ -116,6 +148,10 @@ def help_text() -> str:
 
 
 def create_clickup_task(name: str, description: str, priority: int = 3) -> dict | None:
+    if not CLICKUP_API_KEY or not CLICKUP_LIST_ID:
+        print("ClickUp task creation skipped: missing CLICKUP_API_KEY or CLICKUP_LIST_ID")
+        return None
+
     payload = {
         "name": name,
         "description": description,
@@ -241,6 +277,10 @@ def parse_task_text(text: str) -> tuple[str, str, int]:
 
 
 def get_telegram_file(file_id: str) -> tuple[bytes, str, str] | None:
+    tg_file_base = get_telegram_file_base()
+    if not tg_file_base:
+        return None
+
     file_info = telegram_api("getFile", {"file_id": file_id})
     if not file_info:
         return None
@@ -251,7 +291,7 @@ def get_telegram_file(file_id: str) -> tuple[bytes, str, str] | None:
         return None
 
     try:
-        download = requests.get(f"{TG_FILE_BASE}/{file_path}", timeout=30)
+        download = requests.get(f"{tg_file_base}/{file_path}", timeout=30)
         if not download.ok:
             print(f"Telegram file download error: {download.status_code} {download.text}")
             return None
@@ -369,6 +409,10 @@ def handle_task_creation(chat_id: int, raw_text: str, transcript: str | None = N
 
 
 def handle_update(update: dict) -> None:
+    if get_missing_required_env():
+        print(config_error_text())
+        return
+
     message = update.get("message", {})
     chat_id = message.get("chat", {}).get("id")
     if not chat_id:
@@ -419,9 +463,20 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(b'{"ok":true}')
 
     def do_GET(self):
-        self.send_response(200)
+        missing = get_missing_required_env()
+        status_code = 200 if not missing else 500
+        self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
+        if missing:
+            body = json.dumps({
+                "status": "config_error",
+                "missing": missing,
+                "message": config_error_text(),
+            }).encode("utf-8")
+            self.wfile.write(body)
+            return
+
         self.wfile.write(b'{"status":"Telegram ClickUp bot darbojas"}')
 
     def log_message(self, format, *args):
