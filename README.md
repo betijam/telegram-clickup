@@ -22,6 +22,7 @@ Vercel projektam pievieno:
 | `WEBHOOK_SECRET` | ne | Papildu Telegram webhook aizsardziba |
 | `OPENAI_API_KEY` | ne | Vajadzigs, ja gribi apstradat balss zinas |
 | `OPENAI_TRANSCRIBE_MODEL` | ne | Pec noklusejuma `gpt-4o-mini-transcribe` |
+| `OPENAI_TASK_REWRITE` | ne | `auto` pec noklusejuma, vai `off`, ja negribi AI sakartotu title/description |
 
 Pec izmainam Vercel vajag `Redeploy`.
 

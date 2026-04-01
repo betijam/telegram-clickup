@@ -20,7 +20,7 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
 OPENAI_TASK_MODEL = os.environ.get("OPENAI_TASK_MODEL", "gpt-4o-mini")
-OPENAI_TASK_REWRITE = os.environ.get("OPENAI_TASK_REWRITE", "").strip().lower() in {"1", "true", "yes", "on"}
+OPENAI_TASK_REWRITE_MODE = os.environ.get("OPENAI_TASK_REWRITE", "auto").strip().lower()
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
 BOT_INFO_CACHE: dict | None = None
 
@@ -285,9 +285,9 @@ def help_text() -> str:
         "<code>/task Nosaukums | Apraksts | steidzami</code>\n\n"
         "Prioritāti var ierakstīt ar vārdiem <code>steidzami</code>, <code>augsta</code>, "
         "<code>normāla</code> vai <code>zema</code>.\n\n"
-        "Ja Vercel vidē ir ielikts <code>OPENAI_API_KEY</code>, es varu apstrādāt balss ziņas. "
-        "Ja papildus ieslēgsi <code>OPENAI_TASK_REWRITE=true</code>, varu arī saudzīgi "
-        "sakārtot nosaukumu un piezīmes, nepieliekot klāt izdomātu saturu."
+        "Ja Vercel vidē ir ielikts <code>OPENAI_API_KEY</code>, es varu apstrādāt balss ziņas "
+        "un saudzīgi sakārtot nosaukumu un piezīmes, nepieliekot klāt izdomātu saturu. "
+        "Ja gribi pilnībā izslēgt šo pārrakstīšanu, lieto <code>OPENAI_TASK_REWRITE=off</code>."
     )
 
 
@@ -426,10 +426,39 @@ def parse_task_text(text: str) -> tuple[str, str, int]:
     return title, description, priority
 
 
+def should_use_ai_task_rewrite() -> bool:
+    if not OPENAI_API_KEY:
+        return False
+    if OPENAI_TASK_REWRITE_MODE in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return True
+
+
+def tokenize_text(value: str) -> set[str]:
+    return set(re.findall(r"[a-zA-Z0-9āčēģīķļņōŗšūž]+", normalize_text(value)))
+
+
+def ai_rewrite_is_safe(raw_text: str, base_title: str, base_description: str, title: str, description: str) -> bool:
+    allowed_noise = {
+        "un", "vai", "ar", "par", "to", "ka", "ir", "ja", "lai", "uz", "no", "pa", "pie",
+        "the", "a", "an", "to", "for", "of", "in", "on",
+    }
+    source_tokens = tokenize_text(raw_text) | tokenize_text(base_title) | tokenize_text(base_description)
+    output_tokens = tokenize_text(title) | tokenize_text(description)
+    extra_tokens = {token for token in output_tokens - source_tokens if token not in allowed_noise}
+
+    if len(extra_tokens) > 2:
+        return False
+    if len(description) > max(len(raw_text) + 20, 180):
+        return False
+    return True
+
+
 def maybe_rewrite_task_with_ai(raw_text: str) -> tuple[str, str, int] | None:
-    if not OPENAI_API_KEY or not OPENAI_TASK_REWRITE:
+    if not should_use_ai_task_rewrite():
         return None
 
+    base_title, base_description, base_priority = parse_task_text(raw_text)
     payload = {
         "model": OPENAI_TASK_MODEL,
         "messages": [
@@ -438,18 +467,24 @@ def maybe_rewrite_task_with_ai(raw_text: str) -> tuple[str, str, int] | None:
                 "content": (
                     "Convert a Telegram message into a ClickUp task in JSON. "
                     "Keep the same language as the user. "
-                    "Stay extremely close to the user's wording. "
-                    "Do not add motivation, context, interpretation, or extra phrasing. "
-                    "If the request is unclear, preserve the original wording as literally as possible. "
-                    "The title should be short and clear, but still based on the user's exact words. "
-                    "Put only the remaining original notes into description. "
+                    "Stay very close to the user's wording. "
+                    "Improve only enough to make the title clearer. "
+                    "Do not add motivation, context, interpretation, politeness, or extra phrasing. "
+                    "If unclear, preserve the original wording. "
+                    "Use the current parsed title and description as the default baseline. "
+                    "Only change them if you can make them clearer without adding new information. "
                     "Priority rules: 1 urgent/steidzami, 2 high/augsta, 3 normal, 4 low/zema. "
                     "If unclear, use 3."
                 ),
             },
             {
                 "role": "user",
-                "content": raw_text,
+                "content": (
+                    f"Original text:\n{raw_text}\n\n"
+                    f"Current title: {base_title}\n"
+                    f"Current description: {base_description}\n"
+                    f"Current priority: {base_priority}"
+                ),
             },
         ],
         "response_format": {
@@ -489,6 +524,9 @@ def maybe_rewrite_task_with_ai(raw_text: str) -> tuple[str, str, int] | None:
         return None
 
     priority = max(1, min(4, priority))
+    if not ai_rewrite_is_safe(raw_text, base_title, base_description, title, description):
+        return None
+
     return title[:80].strip(), description, priority
 
 
